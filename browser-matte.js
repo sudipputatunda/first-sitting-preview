@@ -1,7 +1,17 @@
 // Run once on the selected exposure. Landmarks, pixels and the mask all use
 // the same orientation, including mirrored camera frames.
 import {note} from './report.js';
+import {fetchBytes} from './loading.js';
 const assets = new URL('./vendor/mediapipe/', import.meta.url);
+// Phone: fetch the 9.5 MB engine here so the page can say how far it is, then hand
+// the bytes over. If that fails the library fetches the file itself, as before.
+async function streamedEngine(files) {
+  try {
+    note('engine found' + (/nosimd/.test(files.wasmBinaryPath) ? ' (plain build: no SIMD here)' : ''));
+    const bytes = await fetchBytes(files.wasmBinaryPath, 'cut-out engine');
+    return {...files, wasmBinaryPath: URL.createObjectURL(new Blob([bytes], {type: 'application/wasm'}))};
+  } catch (error) { note('engine left to the library (' + error.message + ')'); return files; }
+}
 const tasks = new Map();
 let runtime;
 
@@ -9,7 +19,7 @@ async function loadTask(multipleSitters) {
   if (!runtime) {
     runtime = import('./vendor/mediapipe/vision_bundle.mjs').then(async vision => ({
       vision,
-      files: await vision.FilesetResolver.forVisionTasks(new URL('wasm', assets).href)
+      files: await streamedEngine(await vision.FilesetResolver.forVisionTasks(new URL('wasm', assets).href))
     })).catch(error => { runtime = null; throw error; });
   }
   const {vision, files} = await runtime;
@@ -84,12 +94,24 @@ function maskForFace(mask, face, others) {
 // Trial (masks): hair, face skin, body skin, clothes, accessories. One more small
 // model in the runtime that is already loaded for the cut-out.
 let classTask;
+export const classMap = {phase: 'idle', fraction: 0, since: 0};
 export function prepareClasses() {
-  classTask ??= prepareMatte(false).then(() => runtime).then(({vision, files}) => vision.ImageSegmenter.createFromOptions(files, {
-    baseOptions: {modelAssetPath: new URL('./models/mediapipe/selfie_multiclass_256x256.tflite', import.meta.url).href, delegate: 'CPU'},
-    outputCategoryMask: true,
-    outputConfidenceMasks: false
-  })).catch(error => { classTask = null; throw error; });
+  classTask ??= (async () => {
+    await prepareMatte(false);
+    const {vision, files} = await runtime;
+    classMap.phase = 'downloading'; classMap.since = performance.now();
+    const model = await fetchBytes(new URL('./models/mediapipe/selfie_multiclass_256x256.tflite', import.meta.url).href, 'hair/skin model', fraction => { classMap.fraction = fraction; });
+    classMap.phase = 'creating';
+    const began = performance.now();
+    const task = await vision.ImageSegmenter.createFromOptions(files, {
+      baseOptions: {modelAssetBuffer: model, delegate: 'CPU'},
+      outputCategoryMask: true,
+      outputConfidenceMasks: false
+    });
+    classMap.phase = 'ready';
+    note('hair/skin model ready (set up in ' + ((performance.now() - began) / 1000).toFixed(1) + ' s)');
+    return task;
+  })().catch(error => { classTask = null; classMap.phase = 'failed'; note('ERROR hair/skin model: ' + error.message); throw error; });
   return classTask;
 }
 async function sitterClasses(input) {
@@ -125,8 +147,21 @@ export async function sitterMatte(frame, face, others) {
   if (!matte) throw Error('The portrait could not separate you from the room. Try another exposure with your face and shoulders visible.');
   const began = performance.now();
   try {
-    matte.classes = await Promise.race([sitterClasses(input),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('not ready after 20 s')), 20000))]);
+    if (classMap.phase === 'failed') throw new Error('the model did not load');
+    prepareClasses().catch(() => {});
+    for (;;) {
+      const waited = performance.now() - began;
+      if (classMap.phase === 'ready') break;
+      if (classMap.phase === 'failed') throw new Error('the model did not load');
+      if (waited > 20000) throw new Error('not ready after 20 s');
+      if (classMap.phase === 'downloading' && waited > 2500) {
+        const spent = performance.now() - classMap.since;
+        const left = classMap.fraction > 0 ? spent * (1 - classMap.fraction) / classMap.fraction : Infinity;
+        if (left > 12000) throw new Error('still downloading, ' + Math.round(100 * classMap.fraction) + ' % here');
+      }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    matte.classes = await sitterClasses(input);
     note('hair/skin map in ' + ((performance.now() - began) / 1000).toFixed(1) + ' s');
   } catch (error) {
     note('hair/skin map unavailable (' + error.message + '): painting without it');

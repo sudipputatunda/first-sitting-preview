@@ -2,7 +2,7 @@
 // the sitting. The selected face crop and prediction are never persisted.
 export const finalAge=125;
 let modelReady;
-async function ageModel(){
+export async function ageModel(){
   if(!modelReady){
     modelReady=(async()=>{
       await import('./vendor/face-api/face-api.min.js');

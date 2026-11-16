@@ -49,16 +49,31 @@ function device(){
   }catch(error){lines.push('webgl: '+error.message);}
   const net=navigator.connection;
   if(net)lines.push('network '+(net.effectiveType||'?')+(net.downlink?' '+net.downlink+' Mbps':''));
+  // The same small sum on every device: about 10 ms on a 2023 laptop.
+  const began=performance.now();let sum=0;for(let i=0;i<3e6;i++)sum+=Math.sqrt(i)*1.0001;
+  lines.push('speed test '+(performance.now()-began).toFixed(0)+' ms · WebAssembly '+(typeof WebAssembly==='object'?'yes':'NO')
+    +' · opened from the home screen '+(navigator.standalone||matchMedia('(display-mode: standalone)').matches||matchMedia('(display-mode: fullscreen)').matches?'yes':'no'));
   return lines;
+}
+// What came over the connection: the slowest files, with what was really sent.
+function downloads(){
+  let all=[];
+  try{all=performance.getEntriesByType('resource').filter(e=>/^https?:/.test(e.name));}catch{return [];}
+  if(!all.length)return [];
+  const rows=all.map(e=>({name:e.name.split('/').pop().split('?')[0].slice(0,32),sent:e.transferSize||0,raw:e.decodedBodySize||0,s:e.duration/1000}))
+    .filter(r=>r.raw>150000||r.sent>150000||r.s>3).sort((a,b)=>b.s-a.s).slice(0,8)
+    .map(r=>r.s.toFixed(1).padStart(6)+'s  '+(r.sent?(r.sent/1024).toFixed(0)+' KB sent, '+(r.sent*8/1000/Math.max(.05,r.s)).toFixed(0)+' kbit/s':r.raw?'from this device’s cache':'size not told')+'  '+r.name);
+  const sent=all.reduce((sum,e)=>sum+(e.transferSize||0),0),end=Math.max(...all.map(e=>e.responseEnd));
+  return ['','downloads: '+all.length+' files, '+(sent/1048576).toFixed(1)+' MB sent, last one done at '+(end/1000).toFixed(1)+' s',...rows];
 }
 function draw(){
   if(!text)return;
   head??=device();
   const now=performance.now();
   const under=[...tally].map(([key,v])=>[key,v.ms+(current?.key===key?now-current.since:0),v.n])
-    .sort((a,b)=>b[1]-a[1]).slice(0,12).map(([key,ms,n])=>seconds(ms).padStart(6)+'s  '+n+'x  '+key);
+    .sort((a,b)=>b[1]-a[1]).slice(0,8).map(([key,ms,n])=>seconds(ms).padStart(6)+'s  '+n+'x  '+key);
   text.textContent=[document.querySelector('.sitting-title span')?.textContent||'First Sitting',...head,'',...events,
-    '','time under each message:',...under].join('\n');
+    ...downloads(),'','time under each message:',...under].join('\n');
 }
 panel?.addEventListener('toggle',()=>{if(panel.open)draw();});
 document.querySelector('#report-copy')?.addEventListener('click',async event=>{

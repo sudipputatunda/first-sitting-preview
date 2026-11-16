@@ -3,10 +3,11 @@ import {central,follow} from './tracking.js';
 import {browserFaces,loadModels,useCPU} from './browser-faces.js?rev=mobile-1';
 import {prepareMatte,prepareClasses,sitterMatte} from './browser-matte.js?rev=person-matte-1';
 import {lensGlare,softenGlare} from './glare.js';
-import {ageAt,startingAge,finalAge} from './sitting-age.js';
+import {ageAt,startingAge,finalAge,ageModel} from './sitting-age.js';
 import {restingLine} from './expression.js';
 import {collect,samplingSeconds} from './selection.js';
 import {note,said,timed,waiting,settled,trouble} from './report.js';
+import {onFraction} from './loading.js';
 
 const $=selector=>document.querySelector(selector);
 const painting=$('#painting'), ctx=painting.getContext('2d');
@@ -173,7 +174,7 @@ async function watch(token){
   if(video.requestVideoFrameCallback)callback=video.requestVideoFrameCallback(onFrame);
   try{
     status('Loading the face tracker…');$('#phase').textContent='Starting face tracking';
-    await timed('face tracker',withDeadline(loadModels(),30000,'The face tracker could not load. Check the connection, then tap Start camera again.'));
+    await withDeadline(loadModels(),30000,'The face tracker could not load. Check the connection, then tap Start camera again.');
     while(token===session && mode==='camera' && stream){
       if(document.hidden){lastProgress=performance.now();stalledSince=0;await sleep(300);continue;}
       if(track.readyState==='ended')throw Error('The camera disconnected. Tap Start camera to reconnect.');
@@ -330,7 +331,25 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')exitView();});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)exitView();});
 window.addEventListener('pagehide',disconnect);
 
-$('#camera').textContent='Start camera';$('#camera').disabled=false;$('#photo').disabled=false;
-// Phone: fetch the cut-out engine and the hair / skin / clothes model now, while the
-// sitter reads the page, so the portrait is not kept waiting for a download.
-timed('cut-out engine',prepareMatte(false)).then(()=>timed('hair/skin model',prepareClasses())).catch(()=>{});
+// Phone: the studio loads in the order a sitting needs it and says how far it is. The
+// camera opens once a sitting can run without waiting on a download; the 16 MB
+// hair / skin / clothes model follows in the background and is never waited for long.
+(async()=>{
+  const parts=[['face tracker',.4,()=>loadModels()],['age estimate',.45,()=>ageModel()],['cut-out engine',3.3,()=>prepareMatte(false)]];
+  const total=parts.reduce((sum,part)=>sum+part[1],0);
+  let done=0,open=false;
+  const show=part=>{if(!open)$('#camera').textContent='Loading studio… '+Math.round(100*(done+part)/total)+' %';};
+  const stop=onFraction((label,fraction)=>{if(label==='cut-out engine')show(3.3*.9*fraction);});
+  try{
+    for(const [label,weight,start] of parts){show(0);await timed(label,start());done+=weight;}
+  }catch(e){
+    error('The studio could not finish loading ('+e.message+'). Check the connection and reload the page.');
+    status('The studio did not load · see the note below');
+  }
+  stop();open=true;note('studio ready');
+  $('#camera').textContent='Start camera';$('#camera').disabled=false;$('#photo').disabled=false;
+  prepareClasses().catch(()=>{});
+})();
+// 5. iPhone browsers do not offer full screen; from the home screen the page has no bars.
+if(!document.documentElement.requestFullscreen && !navigator.standalone && !matchMedia('(display-mode: standalone)').matches
+   && !matchMedia('(display-mode: fullscreen)').matches)$('#home-hint').hidden=false;

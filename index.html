@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#ede9de">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="First Sitting">
   <meta name="description" content="An interactive portrait, painted from the person standing before it.">
   <title>Dorian Gray — First Sitting</title>
   <meta name="robots" content="noindex,nofollow">
@@ -12,7 +17,7 @@
 </head>
 <body>
   <main>
-    <header class="sitting-title"><h1>Dorian Gray</h1><span>First Sitting · preview 16 Nov 2026 · b</span></header>
+    <header class="sitting-title"><h1>Dorian Gray</h1><span>First Sitting · preview 16 Nov 2026 · c</span></header>
     <section class="workspace" aria-label="Portrait installation">
       <figure>
         <div id="gallery" aria-label="The portrait display">
@@ -39,6 +44,7 @@
         <button id="compare" class="text-button" hidden>Compare opening and final portraits</button>
         <button id="again" class="text-button" hidden>Release portrait</button>
         <button id="exhibit" class="secondary">Enter installation view <span aria-hidden="true">↗</span></button>
+        <p class="note" id="home-hint" hidden>This browser keeps its bars on screen. For a full-screen painting on an iPhone or iPad: Share, then “Add to Home Screen”, and open First Sitting from there.</p>
         <details id="report" class="settings"><summary>Tester’s report</summary>
         <p class="note">What this device did during the sitting. It stays on this device unless you copy it.</p>
         <pre id="report-text"></pre>
