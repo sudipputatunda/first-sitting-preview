@@ -1,11 +1,12 @@
 import {W,H,surface,linen,paintPortrait} from './portrait.js?rev=person-matte-1';
 import {central,follow} from './tracking.js';
 import {browserFaces,loadModels,useCPU} from './browser-faces.js?rev=mobile-1';
-import {prepareMatte,sitterMatte} from './browser-matte.js?rev=person-matte-1';
+import {prepareMatte,prepareClasses,sitterMatte} from './browser-matte.js?rev=person-matte-1';
 import {lensGlare,softenGlare} from './glare.js';
 import {ageAt,startingAge,finalAge} from './sitting-age.js';
 import {restingLine} from './expression.js';
 import {collect,samplingSeconds} from './selection.js';
+import {note,said,timed,waiting,settled,trouble} from './report.js';
 
 const $=selector=>document.querySelector(selector);
 const painting=$('#painting'), ctx=painting.getContext('2d');
@@ -25,8 +26,12 @@ const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const timecode=n=>Math.floor(n/60)+':'+String(Math.floor(n)%60).padStart(2,'0');
 
-function status(text){ if($('#state').textContent!==text) $('#state').textContent=text; }
-function error(text=''){ $('#error').hidden=!text; $('#error').textContent=text; }
+function status(text){ if($('#state').textContent!==text){$('#state').textContent=text;said(text);} }
+function error(text=''){
+  $('#error').hidden=!text; $('#error').textContent=text;
+  if(text){note('ERROR shown: '+text);trouble();status('The sitting stopped · see the note below');
+    $('#error').scrollIntoView({block:'center',behavior:'smooth'});}
+}
 function resetSitting(){
   document.documentElement.classList.remove('metering');$('#capture-cue').hidden=true;
   clearTimeout(exposureTimer);missingSince=0;
@@ -54,12 +59,15 @@ function frameOf(image,maxSide,mirror=false){
   const scale=Math.min(1,maxSide/Math.max(w,h));
   const canvas=surface(Math.max(1,Math.round(w*scale)),Math.max(1,Math.round(h*scale)));
   const c=canvas.getContext('2d',{willReadFrequently:true});
+  if(!c){note('ERROR no picture memory for a '+canvas.width+'x'+canvas.height+' frame');throw Error('This device ran out of picture memory. Reload the page and try again.');}
   if(mirror){c.translate(canvas.width,0);c.scale(-1,1);}
   c.drawImage(image,0,0,canvas.width,canvas.height);
   return canvas;
 }
 async function vision(image,options){
-  return browserFaces(frameOf(image,580),options);
+  const small=frameOf(image,580);
+  try{return await browserFaces(small,options);}
+  finally{small.width=0;small.height=0;} // phones cap canvas memory: give it back now
 }
 function withDeadline(promise,ms,message){
   let timer;
@@ -70,15 +78,16 @@ async function sit(frame,face,token,glare=null,rest=null,others=[]){
   $('#capture-cue').hidden=true;
   const revision=++generation;
   status(mode==='captured'?'Exposure chosen · you can step away':'Preparing the sitter’s portrait');$('#phase').textContent='Preparing the portrait';
+  note('preparing from a '+frame.width+'x'+frame.height+' exposure, '+others.length+' other faces');waiting();
   ageInput.disabled=true;$('#duration').disabled=true;
   const seconds=Number($('#duration').value);
   const [opening,matte]=await Promise.all([
-    startingAge(frame,face,ageInput.valueAsNumber),
-    withDeadline(sitterMatte(frame,face,others),45000,'The portrait cutout took too long to load. Check the connection and try another sitting.')
+    timed('age estimate',startingAge(frame,face,ageInput.valueAsNumber)),
+    timed('cut-out and hair/skin map',withDeadline(sitterMatte(frame,face,others),45000,'The portrait cutout took too long to load. Check the connection and try another sitting.'))
   ]);
 
   if(token!==session || revision!==generation)return;
-  const next=await paintPortrait(softenGlare(frame,glare),face,matte,rest,opening.age);
+  const next=await timed('painting',paintPortrait(softenGlare(frame,glare),face,matte,rest,opening.age));
   if(token!==session || revision!==generation){next.close();return;}
   baseline=opening;ageSeconds=seconds;ageInput.value='';
   portrait=next;document.documentElement.classList.remove('metering');$('#capture-cue').hidden=true;
@@ -90,7 +99,7 @@ async function sit(frame,face,token,glare=null,rest=null,others=[]){
     tones.data[i]=104+l*.54;tones.data[i+1]=89+l*.54;tones.data[i+2]=68+l*.53;
   }
   under.putImageData(tones,0,0);
-  started=performance.now();
+  started=performance.now();settled();note('portrait on the canvas, opening age '+opening.age+' ('+opening.source+')');
   $('#again').hidden=false;$('#compare').hidden=false;
   painting.setAttribute('aria-label','A painted portrait of the central sitter, gradually ageing');
   status(mode==='captured'?'Painting from the chosen exposure':'Still-photo sitting');
@@ -102,7 +111,7 @@ function release(){
 }
 async function paintBest(token){
   if(token!==session || mode!=='camera' || !candidate?.best)return;
-  const {best,rest}=candidate;
+  const {best,rest}=candidate;note('exposure chosen from '+candidate.count+' good looks');
   candidate=null;mode='captured';stopCamera();$('#camera').hidden=true;
   try{
     await sit(best.frame,best.face,token,best.glare,restingLine(best.pose,rest?.pose),best.others);
@@ -131,6 +140,7 @@ function observe(faces,frame,token,misses){
   collect(candidate,frame,whom,now);
   if(candidate.best!==previousBest){
     candidate.best.others=faces.filter(face=>face!==whom);
+    if(previousBest?.frame){previousBest.frame.width=0;previousBest.frame.height=0;}
     prepareMatte(candidate.best.others.length>0).catch(()=>{}); // The sitting retries initialization and reports errors.
   }
   // The clock owns the handoff. A lost face or a slow detector must never
@@ -163,7 +173,7 @@ async function watch(token){
   if(video.requestVideoFrameCallback)callback=video.requestVideoFrameCallback(onFrame);
   try{
     status('Loading the face tracker…');$('#phase').textContent='Starting face tracking';
-    await withDeadline(loadModels(),30000,'The face tracker could not load. Check the connection, then tap Start camera again.');
+    await timed('face tracker',withDeadline(loadModels(),30000,'The face tracker could not load. Check the connection, then tap Start camera again.'));
     while(token===session && mode==='camera' && stream){
       if(document.hidden){lastProgress=performance.now();stalledSince=0;await sleep(300);continue;}
       if(track.readyState==='ended')throw Error('The camera disconnected. Tap Start camera to reconnect.');
@@ -194,6 +204,7 @@ async function watch(token){
       if(token!==session || mode!=='camera' || !stream)return;
       misses=faces.length?0:misses+1;
       observe(faces,frame,token,misses);
+      if(candidate?.best?.frame!==frame){frame.width=0;frame.height=0;}
       await sleep(165);
     }
   }catch(e){cameraFailed(token,e.message);}
@@ -233,6 +244,7 @@ $('#camera').addEventListener('click',async()=>{
     await withDeadline(video.play(),12000,'The camera could not start playback. Tap Start camera to retry, or choose a still photo.');
     if(token!==session)return;
     activationPending=false;$('#camera').textContent='Stop camera';$('#signal').classList.add('live');
+    note('camera '+video.videoWidth+'x'+video.videoHeight+(upright?' (phone upright)':''));
     watch(token);
   } catch(e){
     if(token!==session)return;
@@ -304,6 +316,7 @@ function exitView(){
 }
 $('#exhibit').addEventListener('click',()=>{
   document.body.classList.add('installation');$('#leave').hidden=false;
+  note('installation view asked; full screen '+(document.documentElement.requestFullscreen?'offered':'not offered by this browser'));
   if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{});
   $('#leave').focus({preventScroll:true});$('#leave').blur();
 });
@@ -318,3 +331,6 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 window.addEventListener('pagehide',disconnect);
 
 $('#camera').textContent='Start camera';$('#camera').disabled=false;$('#photo').disabled=false;
+// Phone: fetch the cut-out engine and the hair / skin / clothes model now, while the
+// sitter reads the page, so the portrait is not kept waiting for a download.
+timed('cut-out engine',prepareMatte(false)).then(()=>timed('hair/skin model',prepareClasses())).catch(()=>{});

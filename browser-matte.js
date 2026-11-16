@@ -1,5 +1,6 @@
 // Run once on the selected exposure. Landmarks, pixels and the mask all use
 // the same orientation, including mirrored camera frames.
+import {note} from './report.js';
 const assets = new URL('./vendor/mediapipe/', import.meta.url);
 const tasks = new Map();
 let runtime;
@@ -83,14 +84,16 @@ function maskForFace(mask, face, others) {
 // Trial (masks): hair, face skin, body skin, clothes, accessories. One more small
 // model in the runtime that is already loaded for the cut-out.
 let classTask;
-async function sitterClasses(input) {
-  const {vision, files} = await runtime;
-  classTask ??= vision.ImageSegmenter.createFromOptions(files, {
+export function prepareClasses() {
+  classTask ??= prepareMatte(false).then(() => runtime).then(({vision, files}) => vision.ImageSegmenter.createFromOptions(files, {
     baseOptions: {modelAssetPath: new URL('./models/mediapipe/selfie_multiclass_256x256.tflite', import.meta.url).href, delegate: 'CPU'},
     outputCategoryMask: true,
     outputConfidenceMasks: false
-  });
-  const task = await classTask;
+  })).catch(error => { classTask = null; throw error; });
+  return classTask;
+}
+async function sitterClasses(input) {
+  const task = await prepareClasses();
   let found = null;
   task.segment(input, result => {
     const map = result.categoryMask;
@@ -118,8 +121,16 @@ export async function sitterMatte(frame, face, others) {
   } else {
     task.segment(input, read);
   }
+  note('cut-out ' + (matte ? 'found' : 'NOT found') + ' on a ' + input.width + 'x' + input.height + ' copy');
   if (!matte) throw Error('The portrait could not separate you from the room. Try another exposure with your face and shoulders visible.');
-  try { matte.classes = await sitterClasses(input); }
-  catch (error) { classTask = null; console.warn('Hair and skin map unavailable for this sitting.', error.message); }
+  const began = performance.now();
+  try {
+    matte.classes = await Promise.race([sitterClasses(input),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('not ready after 20 s')), 20000))]);
+    note('hair/skin map in ' + ((performance.now() - began) / 1000).toFixed(1) + ' s');
+  } catch (error) {
+    note('hair/skin map unavailable (' + error.message + '): painting without it');
+    console.warn('Hair and skin map unavailable for this sitting.', error.message);
+  }
   return matte;
 }

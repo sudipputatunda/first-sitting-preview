@@ -66,5 +66,6 @@ export async function browserFaces(frame,{fast=false,searchCentre=false}={}){
     await useCPU();results=await detect();
   }
   const found=results.map(r=>faceContours(r,w,h,offsetX,offsetY)).filter(f=>f.box[2]>.035 && f.box[3]>.045);
+  if(input!==frame){input.width=0;input.height=0;}
   return describe(frame,found);
 }
