@@ -1,0 +1,12 @@
+Dorian Gray — First Sitting, browser study
+Face detection and 68-point landmarks use the tiny networks shipped by face-api.js 0.22.2.
+Source and license: https://github.com/justadudewhohacks/face-api.js/tree/0.22.2
+Tagged weights: https://github.com/justadudewhohacks/face-api.js/tree/0.22.2/weights
+Retrieved via Firecrawl on 13 November 2026. Verified upstream Git blob IDs:
+
+a3f113a54220f9bda6b5e9a805fa657a13a0cd21  tiny_face_detector_model-shard1
+7d3b222d04af27b6238f07b631e7c8c5f470b81f  tiny_face_detector_model-weights_manifest.json
+f04a9d5ecd26eb59062ea72c6617a955af22cc5c  face_landmark_68_tiny_model-shard1
+5dc790e48fd770a98d9c2c5b445e035a261c0d25  face_landmark_68_tiny_model-weights_manifest.json
+
+The distribution and bundled runtime license notices are included in this directory.

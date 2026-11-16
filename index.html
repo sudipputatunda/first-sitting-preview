@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#ede9de">
+  <meta name="description" content="An interactive portrait, painted from the person standing before it.">
+  <title>Dorian Gray — First Sitting</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="stylesheet" href="studio.css?rev=mobile-1">
+  <script type="module" src="studio.js?rev=person-matte-1"></script>
+</head>
+<body>
+  <main>
+    <header class="sitting-title"><h1>Dorian Gray</h1><span>First Sitting · preview 16 Nov 2026</span></header>
+    <section class="workspace" aria-label="Portrait installation">
+      <figure>
+        <div id="gallery" aria-label="The portrait display">
+          <div class="frame"><canvas id="painting" width="960" height="1200" aria-label="An empty linen canvas awaiting a sitter"></canvas></div>
+          <div id="camera-monitor"><video id="video" autoplay muted playsinline webkit-playsinline aria-label="Your front camera preview"></video></div>
+          <span id="capture-cue" hidden>Tip your chin slightly to move the light off your lenses.</span>
+          <button id="leave" hidden>Exit installation</button>
+        </div>
+        <figcaption><span class="signal" id="signal"></span><span id="state" role="status">Canvas at rest</span></figcaption>
+      </figure>
+      <aside>
+        <h2>Begin a sitting</h2>
+        <p>Face the camera in soft light for about eight seconds. Once it chooses your exposure, you can step away and watch your portrait age.</p>
+        <button id="camera" class="primary" disabled>Loading studio…</button>
+        <label id="photo-label" class="secondary" for="photo">Take or choose a photo</label>
+        <input id="photo" disabled type="file" accept="image/*" class="file-input">
+        <p class="note" id="input-note">Your portrait is processed on this device.</p>
+        <p id="error" role="alert" hidden></p>
+        <details class="settings"><summary>Sitting settings</summary>
+        <div class="timing"><label for="duration">Time to age 125</label><select id="duration"><option value="45">45 seconds</option><option value="65" selected>65 seconds</option><option value="80">80 seconds</option></select></div>
+        <div class="age-entry"><label for="starting-age">Starting age</label><input id="starting-age" type="number" min="0" max="124" step="1" placeholder="Estimate" title="Leave blank for an on-device estimate, or enter an age from 0 to 124 for this sitting."></div></details>
+        <div class="progress-track"><i id="progress"></i></div>
+        <div class="clock"><span id="phase">Waiting for a sitter</span><span id="elapsed">0:00</span></div>
+        <button id="compare" class="text-button" hidden>Compare opening and final portraits</button>
+        <button id="again" class="text-button" hidden>Release portrait</button>
+        <button id="exhibit" class="secondary">Enter installation view <span aria-hidden="true">↗</span></button>
+        
+      </aside>
+    </section>
+  </main>
+  <dialog id="comparison" aria-labelledby="comparison-title">
+    <h2 id="comparison-title">The same sitting</h2>
+    <div class="pair"><figure><canvas id="opening" width="960" height="1200"></canvas><figcaption id="opening-caption">Opening portrait</figcaption></figure>
+    <figure><canvas id="closing" width="960" height="1200"></canvas><figcaption id="closing-caption"></figcaption></figure></div>
+    <button id="close-comparison" class="secondary">Return to sitting</button>
+  </dialog>
+</body>
+</html>
